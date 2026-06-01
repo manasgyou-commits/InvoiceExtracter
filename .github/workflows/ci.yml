@@ -1,0 +1,85 @@
+name: CI
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+    branches: [main, master]
+
+jobs:
+  lint-and-syntax:
+    name: Syntax & Lint Check
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.10
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+
+      - name: Check syntax (all .py files)
+        run: |
+          python -m compileall -q main.py test_extraction.py
+
+      - name: Install flake8
+        run: pip install flake8
+
+      - name: Lint
+        run: |
+          flake8 main.py test_extraction.py \
+            --max-line-length=120 \
+            --extend-ignore=E501,W503
+
+  unit-tests:
+    name: Unit Tests (no OCR hardware)
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.10
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+
+      - name: Install test deps (no Kivy/Tesseract)
+        run: |
+          pip install pytest
+
+      - name: Run parser unit tests
+        run: pytest test_parser.py -v
+
+  buildozer-validate:
+    name: Validate buildozer.spec
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Check for duplicate keys in buildozer.spec
+        run: |
+          python - <<'EOF'
+          with open("buildozer.spec") as f:
+              lines = f.readlines()
+          seen = {}
+          errors = []
+          for i, line in enumerate(lines, 1):
+              line = line.strip()
+              if not line or line.startswith("#") or line.startswith("["):
+                  continue
+              key = line.split("=")[0].strip()
+              if key in seen:
+                  errors.append(f"Line {i}: duplicate key '{key}' (first at line {seen[key]})")
+              else:
+                  seen[key] = i
+          if errors:
+              for e in errors:
+                  print("ERROR:", e)
+              raise SystemExit(1)
+          print("buildozer.spec OK — no duplicate keys")
+          EOF
